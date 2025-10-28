@@ -1,10 +1,19 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
 import userServices from "../../Services/userServices";
 import useGlobalReducer from "../../hooks/useGlobalReducer";
 import styles from "./UserProfile.module.css";
-import FormGroup from "../../components/Groups/FormGroup"
-import Avatar, { AVATAR_MAP, inferNumberFromUrl } from "../../components/Avatar";
+import FormGroup from "../../components/Groups/FormGroup";
+import Avatar from "../../components/Avatar";
+import AvatarModal from "../../components/AvatarModal";
+import EventForm from "../../components/EventForm";
+import {
+  DEFAULT_AVATAR_THEME,
+  SPORT_AVATAR_THEMES,
+  createDicebearAvatarUrl,
+  findThemeByUrl,
+  getInitials,
+  isDicebearInitialsUrl,
+} from "../../utils/avatarThemes";
 
 
 const Profile = () => {
@@ -16,15 +25,16 @@ const Profile = () => {
     email: store?.user?.email || "",
     avatar: store?.user?.avatar || "",
   });
-  const [avatarNumber, setAvatarNumber] = useState("5");
+  const [selectedThemeId, setSelectedThemeId] = useState(DEFAULT_AVATAR_THEME.id);
   const [events, setEvents] = useState([]);
   const [groups, setGroups] = useState([]);
   const [tab, setTab] = useState("events");
   const [loading, setLoading] = useState(true);
   const [okMsg, setOkMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [showCreateGroup, setShowCreateGroup] = useState("");
-  const [showCreateEvent, setShowCreateEvent] = useState("");
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
 
 
   useEffect(() => {
@@ -39,16 +49,22 @@ const Profile = () => {
         }
 
         const { user, groups = [], events = [] } = resp;
+        const userName = user?.user_name || "";
+        const initials = getInitials(userName);
 
-        // slect
-        const num = inferNumberFromUrl(user?.avatar);
+        let avatarUrl = user?.avatar;
+        let theme = findThemeByUrl(avatarUrl) || DEFAULT_AVATAR_THEME;
+
+        if (!isDicebearInitialsUrl(avatarUrl)) {
+          avatarUrl = createDicebearAvatarUrl(theme, initials);
+        }
 
         setForm({
-          user_name: user?.user_name || "",
+          user_name: userName,
           email: user?.email || "",
-          avatar: AVATAR_MAP[num],
+          avatar: avatarUrl,
         });
-        setAvatarNumber(num);
+        setSelectedThemeId(theme.id);
 
         setEvents(events);
         setGroups(groups);
@@ -68,7 +84,7 @@ const Profile = () => {
 
     const payload = {
       user_name: form.user_name,
-      avatar: AVATAR_MAP[avatarNumber],
+      avatar: form.avatar,
     };
 
     userServices
@@ -77,13 +93,19 @@ const Profile = () => {
         if (resp.success) {
           const user = resp.data;
 
+          const updatedName = user.user_name || "";
+          const initials = getInitials(updatedName);
+          const theme = findThemeByUrl(user.avatar) || DEFAULT_AVATAR_THEME;
+          const avatarUrl = isDicebearInitialsUrl(user.avatar)
+            ? user.avatar
+            : createDicebearAvatarUrl(theme, initials);
+
           setForm({
-            user_name: user.user_name || "",
+            user_name: updatedName,
             email: user.email || "",
-            avatar: user.avatar || "",
+            avatar: avatarUrl,
           });
-          const num = inferNumberFromUrl(user.avatar);
-          setAvatarNumber(num);
+          setSelectedThemeId(theme.id);
 
           dispatch({ type: "auth", payload: { user } });
           localStorage.setItem("user", JSON.stringify(user));
@@ -97,14 +119,51 @@ const Profile = () => {
       .catch(() => setErrorMsg("Error updating profile"));
   };
 
-  const handleAvatarChange = (e) => {
-    const value = e.target.value;
-    setAvatarNumber(value);
-    setForm((prev) => ({ ...prev, avatar: AVATAR_MAP[value] }));
-  };
+  const selectedTheme = useMemo(
+    () =>
+      SPORT_AVATAR_THEMES.find((theme) => theme.id === selectedThemeId) ||
+      DEFAULT_AVATAR_THEME,
+    [selectedThemeId]
+  );
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setForm((prev) => {
+      const updated = { ...prev, [name]: value };
+      if (name === "user_name" && isDicebearInitialsUrl(prev.avatar)) {
+        updated.avatar = createDicebearAvatarUrl(selectedTheme, getInitials(value));
+      }
+      return updated;
+    });
+  };
+
+  const handleAvatarSelect = (theme) => {
+    setSelectedThemeId(theme.id);
+    setForm((prev) => ({
+      ...prev,
+      avatar: createDicebearAvatarUrl(theme, getInitials(prev.user_name)),
+    }));
+    setShowAvatarModal(false);
+  };
+
+  const toggleEventForm = () => {
+    setShowCreateEvent((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowCreateGroup(false);
+      }
+      return next;
+    });
+  };
+
+  const toggleGroupForm = () => {
+    setShowCreateGroup((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowCreateEvent(false);
+      }
+      return next;
+    });
   };
 
 
@@ -124,19 +183,24 @@ const Profile = () => {
                 />
               </div>
               <div className="mt-3">
-                <label className="form-label fw-bold">Select Profile-IMG </label>
-                <select
-                  className={`form-select ${styles.input}`}
-                  value={avatarNumber}
-                  onChange={handleAvatarChange}
-                >
-                  {Array.from({ length: 10 },
-                    (_, i) => String(i + 1)).map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                </select>
+                <span className="form-label fw-bold">Avatar deportivo</span>
+                <div className="d-flex flex-column gap-2 align-items-center">
+                  <button
+                    type="button"
+                    className={`btn btn-outline-primary ${styles.avatarBtn}`}
+                    onClick={() => setShowAvatarModal(true)}
+                  >
+                    Elegir avatar
+                  </button>
+                  {isDicebearInitialsUrl(form.avatar) && (
+                    <span className="badge bg-light text-dark fw-semibold">
+                      {selectedTheme.label}
+                    </span>
+                  )}
+                  <p className="text-muted small mb-0">
+                    Generamos tu imagen con tus iniciales y colores inspirados en deportes.
+                  </p>
+                </div>
               </div>
             </div>
             <div className="col-12 col-md-8">
@@ -144,7 +208,7 @@ const Profile = () => {
               {okMsg && <p className="alert alert-success">{okMsg}</p>}
               {errorMsg && <p className="alert alert-danger">{errorMsg}</p>}
 
-              <div className="d-flex justify-content-between" >
+              <div className="d-flex justify-content-between">
                 <h2 className={styles.title}>Edit Profile</h2>
                 <button className={`btn p-2 mt-2 ${styles.cta}`} onClick={handleSave}>
                   Save Changes
@@ -213,10 +277,10 @@ const Profile = () => {
                 ) : (
                   <p className={styles.empty}>No events yet.</p>
                 )}
-                <div className="fixed-bottom w-100 text-center my-3">
+                <div className="text-center my-3">
                   <button
                     className={`btn w-75 ${styles.cta}`}
-                    onClick={() => setShowCreateGroup((prev) => !prev)}
+                    onClick={toggleEventForm}
                   >
                     {showCreateEvent ? "Close Event" : "Create Event"}
                   </button>
@@ -240,10 +304,10 @@ const Profile = () => {
                 ) : (
                   <p className={styles.empty}>No groups yet.</p>
                 )}
-                <div className="fixed-bottom w-100 text-center my-3">
+                <div className="text-center my-3">
                   <button
                     className={`btn w-75  ${styles.cta}`}
-                    onClick={() => setShowCreateGroup((prev) => !prev)}
+                    onClick={toggleGroupForm}
                   >
                     {showCreateGroup ? "Close Form" : "Create Group"}
                   </button>
@@ -255,13 +319,17 @@ const Profile = () => {
         </div>
       </div>
       <div className="container">
-        {showCreateGroup && (
-          <FormGroup />
-        )}
-        {showCreateEvent && (
-          <FormGroup />
-        )}
+        {showCreateGroup && <FormGroup />}
+        {showCreateEvent && <EventForm />}
       </div>
+
+      <AvatarModal
+        show={showAvatarModal}
+        onClose={() => setShowAvatarModal(false)}
+        onSelect={handleAvatarSelect}
+        userName={form.user_name}
+        selectedThemeId={selectedThemeId}
+      />
 
     </>
   );

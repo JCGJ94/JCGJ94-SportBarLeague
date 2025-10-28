@@ -1,44 +1,37 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import PropTypes from "prop-types";
+import {
+  createDicebearAvatarUrl,
+  DEFAULT_AVATAR_THEME,
+  getInitials,
+  findThemeByUrl,
+} from "../utils/avatarThemes";
 
-// --- Avatares predefinidos ---
-export const AVATAR_MAP = {
-  "1": "https://i.pravatar.cc/240?img=12",
-  "2": "https://i.pravatar.cc/240?img=2",
-  "3": "https://i.pravatar.cc/240?img=3",
-  "4": "https://i.pravatar.cc/240?img=4",
-  "5": "https://i.pravatar.cc/240?img=5",
-  "6": "https://i.pravatar.cc/240?img=6",
-  "7": "https://i.pravatar.cc/240?img=7",
-  "8": "https://i.pravatar.cc/240?img=8",
-  "9": "https://i.pravatar.cc/240?img=9",
-  "10": "https://i.pravatar.cc/240?img=10",
-};
+const Avatar = ({ src, name, bgClass, size = 36, className = "" }) => {
+  const initials = useMemo(() => getInitials(name), [name]);
+  const [hasError, setHasError] = useState(false);
 
-// --- Utilidad para deducir el número desde la URL ---
-export const inferNumberFromUrl = (url) => {
-  if (!url) return "5";
-  const match = url.match(/img=(\d+)/);
-  return match?.[1] || "5";
-};
+  const themeFromSrc = useMemo(() => findThemeByUrl(src), [src]);
 
-// --- Componente principal ---
-const Avatar = ({ src, name, bgClass, size = 36 }) => {
-  // Si hay una URL válida o una clave de avatar
-  const resolvedSrc = AVATAR_MAP[src] || src;
+  const fallbackUrl = useMemo(() => {
+    const theme = themeFromSrc || DEFAULT_AVATAR_THEME;
+    return createDicebearAvatarUrl(theme, initials);
+  }, [initials, themeFromSrc]);
+
+  const resolvedSrc = !hasError && (src || fallbackUrl);
 
   if (resolvedSrc) {
     return (
       <img
         src={resolvedSrc}
         alt={name || "User avatar"}
-        className="rounded-circle object-fit-cover border border-light shadow-sm"
+        className={`rounded-circle object-fit-cover border border-light shadow-sm ${className}`.trim()}
         style={{ width: size, height: size }}
+        onError={() => setHasError(true)}
+        loading="lazy"
       />
     );
   }
-
-  // Si no hay imagen, mostramos iniciales
-  const initials = (name || "U").trim().slice(0, 2).toUpperCase();
 
   const isLightBg =
     bgClass?.includes("warning") ||
@@ -48,14 +41,25 @@ const Avatar = ({ src, name, bgClass, size = 36 }) => {
 
   const textColor = isLightBg ? "text-dark" : "text-white";
 
+  const fallbackInitials = initials || "SB";
+
   return (
     <div
-      className={`rounded-circle d-flex align-items-center justify-content-center ${bgClass || "bg-secondary"} ${textColor}`}
+      className={`rounded-circle d-flex align-items-center justify-content-center ${bgClass || "bg-secondary"} ${textColor} ${className}`.trim()}
+      style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      {initials}
+      {fallbackInitials}
     </div>
   );
+};
+
+Avatar.propTypes = {
+  src: PropTypes.string,
+  name: PropTypes.string,
+  bgClass: PropTypes.string,
+  size: PropTypes.number,
+  className: PropTypes.string,
 };
 
 export default Avatar;
